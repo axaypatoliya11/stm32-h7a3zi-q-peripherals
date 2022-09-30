@@ -42,6 +42,8 @@
 /* Private variables ---------------------------------------------------------*/
 ADC_HandleTypeDef hadc2;
 
+IWDG_HandleTypeDef hiwdg1;
+
 RNG_HandleTypeDef hrng;
 
 RTC_HandleTypeDef hrtc;
@@ -54,6 +56,8 @@ int tCelsius;
 int tFahrenheit;
 #define TS30    ((uint16_t*)((uint32_t)0x08FFF814))
 #define TS110   ((uint16_t*)((uint32_t)0x08FFF818))
+
+/* macros for flash */
 #define DATA_TRANSMIT_LENGTH	2048 //byte
 
 #define BYTE_TO_BIT				8
@@ -66,6 +70,10 @@ int tFahrenheit;
 #define DATA_READ_AT_A_TIME		4 //byte
 #define DATA_READ_LOOP			(DATA_TRANSMIT_LENGTH*WRITING_BUFFER_DATATYPE_UINT16)/(DATA_READ_AT_A_TIME*BYTE_TO_BIT) //32-read bits at a time & 4-bytes
 
+/* macros for watchdog */
+#define WATCHDOG_RESET_TIME		25 //in seconds
+#define PRESCALAR				64 //0->4, 2->8, 4->16, 8->32, 16->64, 32->128, 64->256
+#define RELOAD_VAL_FROM_SECONDS	(((WATCHDOG_RESET_TIME*1000*32000)/(4*PRESCALAR*1000))-1)
 
 uint32_t random32bit_generatedNumber;
 char alarmMsg[] = "ALARM ALARM ALARM\n";
@@ -74,9 +82,6 @@ char alarmMsg[] = "ALARM ALARM ALARM\n";
 uint16_t buffer_tfs[DATA_TRANSMIT_LENGTH] = {0};
 uint32_t send_address = 0x080FE000U;
 uint32_t rcv_address = 0x080FE000U;
-
-//uint32_t uart;
-
 
 
 RTC_TimeTypeDef Time;
@@ -93,6 +98,7 @@ static void MX_ADC2_Init(void);
 static void MX_USART3_UART_Init(void);
 static void MX_RNG_Init(void);
 static void MX_RTC_Init(void);
+static void MX_IWDG1_Init(void);
 /* USER CODE BEGIN PFP */
 void set_time_custom();
 void set_date_custom();
@@ -147,27 +153,39 @@ int main(void)
   MX_USART3_UART_Init();
   MX_RNG_Init();
   MX_RTC_Init();
+  MX_IWDG1_Init();
   /* USER CODE BEGIN 2 */
+
+  /* watchdog */
+  HAL_Delay(200);
+  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_SET);
+  HAL_UART_Transmit(&huart3, "uart initialized again\n", 23, 100);
+  for(int i=0; i<=2; i++){
+	  HAL_Delay(5000);
+	  HAL_UART_Transmit(&huart3, "5 seconds\n", 10, 500);
+	  HAL_IWDG_Refresh(&hiwdg1);
+  }
+
   HAL_ADC_Start(&hadc2);
   char time[30];
   char date[30];
 
   /* set time, date & alarm */
-  set_time_custom();
-  set_date_custom();
-  set_alarm_custom();
+//  set_time_custom();
+//  set_date_custom();
+//  set_alarm_custom();
 
   /* clear the flash */
-  FLASH_clear();
+//  FLASH_clear();
 
   /* write the flash */
-  FLASH_write();
+//  FLASH_write();
 
   /* Read from the flash memory */
-  FLASH_Read(rcv_address, &holdMultipleRead[0], DATA_READ_LOOP);
+//  FLASH_Read(rcv_address, &holdMultipleRead[0], DATA_READ_LOOP);
 
   /* print the readed data */
-  Print_readed_data(holdMultipleRead);
+//  Print_readed_data(holdMultipleRead);
 
 
   /* USER CODE END 2 */
@@ -179,6 +197,7 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+//	  HAL_IWDG_Refresh(&hiwdg1);
 	/* get the temperature */
 //	HAL_ADC_PollForConversion(&hadc2, 1000);
 //	readValue = HAL_ADC_GetValue(&hadc2);
@@ -214,8 +233,9 @@ int main(void)
 //
 //	HAL_UART_Transmit(&huart3, "\n", 1, 100);
 
+//	HAL_Delay(1000);
 
-	HAL_Delay(1000);
+
   }
   /* USER CODE END 3 */
 }
@@ -349,6 +369,35 @@ static void MX_ADC2_Init(void)
 }
 
 /**
+  * @brief IWDG1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_IWDG1_Init(void)
+{
+
+  /* USER CODE BEGIN IWDG1_Init 0 */
+
+  /* USER CODE END IWDG1_Init 0 */
+
+  /* USER CODE BEGIN IWDG1_Init 1 */
+
+  /* USER CODE END IWDG1_Init 1 */
+  hiwdg1.Instance = IWDG1;
+  hiwdg1.Init.Prescaler = IWDG_PRESCALER_256;
+  hiwdg1.Init.Window = 4095;
+  hiwdg1.Init.Reload = RELOAD_VAL_FROM_SECONDS; //calculated from macro
+  if (HAL_IWDG_Init(&hiwdg1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN IWDG1_Init 2 */
+
+  /* USER CODE END IWDG1_Init 2 */
+
+}
+
+/**
   * @brief RNG Initialization Function
   * @param None
   * @retval None
@@ -387,8 +436,8 @@ static void MX_RTC_Init(void)
 
   /* USER CODE END RTC_Init 0 */
 
-//  RTC_TimeTypeDef sTime = {0};
-//  RTC_DateTypeDef sDate = {0};
+  RTC_TimeTypeDef sTime = {0};
+  RTC_DateTypeDef sDate = {0};
   RTC_AlarmTypeDef sAlarm = {0};
 
   /* USER CODE BEGIN RTC_Init 1 */
@@ -416,29 +465,29 @@ static void MX_RTC_Init(void)
 
   /** Initialize RTC and set the Time and Date
   */
-//  sTime.Hours = 0x0;
-//  sTime.Minutes = 0x0;
-//  sTime.Seconds = 0x0;
-//  sTime.DayLightSaving = RTC_DAYLIGHTSAVING_NONE;
-//  sTime.StoreOperation = RTC_STOREOPERATION_RESET;
-//  if (HAL_RTC_SetTime(&hrtc, &sTime, RTC_FORMAT_BCD) != HAL_OK)
-//  {
-//    Error_Handler();
-//  }
-//  sDate.WeekDay = RTC_WEEKDAY_TUESDAY;
-//  sDate.Month = RTC_MONTH_SEPTEMBER;
-//  sDate.Date = 0x20;
-//  sDate.Year = 0x22;
-//  if (HAL_RTC_SetDate(&hrtc, &sDate, RTC_FORMAT_BCD) != HAL_OK)
-//  {
-//    Error_Handler();
-//  }
+  sTime.Hours = 0x0;
+  sTime.Minutes = 0x0;
+  sTime.Seconds = 0x0;
+  sTime.DayLightSaving = RTC_DAYLIGHTSAVING_NONE;
+  sTime.StoreOperation = RTC_STOREOPERATION_RESET;
+  if (HAL_RTC_SetTime(&hrtc, &sTime, RTC_FORMAT_BCD) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sDate.WeekDay = RTC_WEEKDAY_TUESDAY;
+  sDate.Month = RTC_MONTH_SEPTEMBER;
+  sDate.Date = 0x20;
+  sDate.Year = 0x22;
+  if (HAL_RTC_SetDate(&hrtc, &sDate, RTC_FORMAT_BCD) != HAL_OK)
+  {
+    Error_Handler();
+  }
 
   /** Enable the Alarm A
   */
-//  sAlarm.AlarmTime.Hours = 0x0;
-//  sAlarm.AlarmTime.Minutes = 0x0;
-//  sAlarm.AlarmTime.Seconds = 0x0;
+  sAlarm.AlarmTime.Hours = 0x11;
+  sAlarm.AlarmTime.Minutes = 0x12;
+  sAlarm.AlarmTime.Seconds = 0x0;
   sAlarm.AlarmTime.SubSeconds = 0x0;
   sAlarm.AlarmTime.DayLightSaving = RTC_DAYLIGHTSAVING_NONE;
   sAlarm.AlarmTime.StoreOperation = RTC_STOREOPERATION_RESET;
