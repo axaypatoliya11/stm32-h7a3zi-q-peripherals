@@ -164,7 +164,8 @@ int main(void)
   MX_RNG_Init();
   MX_RTC_Init();
 //  MX_IWDG1_Init();
-  HAL_UART_Transmit(&huart3, "uart initialized again\n", 23, UART_TIMEOUT);
+  HAL_Delay(1000);
+  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_14, 1);
   MX_WWDG1_Init();
   /* USER CODE BEGIN 2 */
 
@@ -224,7 +225,7 @@ int main(void)
 
 //	HAL_Delay(1000);
 
-	  HAL_Delay(15);
+	  HAL_Delay(22);
 	  HAL_WWDG_Refresh(&hwwdg1);
 
   }
@@ -561,9 +562,9 @@ static void MX_WWDG1_Init(void)
 
   /* USER CODE END WWDG1_Init 1 */
   hwwdg1.Instance = WWDG1;
-  hwwdg1.Init.Prescaler = WWDG_PRESCALER_4;
-  hwwdg1.Init.Window = 83;
-  hwwdg1.Init.Counter = 119;
+  hwwdg1.Init.Prescaler = WWDG_PRESCALER_16;
+  hwwdg1.Init.Window = 71;
+  hwwdg1.Init.Counter = 83;
   hwwdg1.Init.EWIMode = WWDG_EWI_DISABLE;
   if (HAL_WWDG_Init(&hwwdg1) != HAL_OK)
   {
