@@ -23,6 +23,8 @@
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
+#include "stm32h7xx_hal_rcc.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -53,15 +55,28 @@ UART_HandleTypeDef huart3;
 WWDG_HandleTypeDef hwwdg1;
 
 /* USER CODE BEGIN PV */
+
+/* Support Macros */
+//#define __RNG__
+//#define __TEMPERATURE__
+//#define __FLASH__
+//#define __TIME_DATE_ALARM__
+//#define __IWDG__
+#define __WWDG__
+
+#ifdef __TEMPERATURE__
+/* macros for temperature */
 uint32_t readValue;
 int tCelsius;
 int tFahrenheit;
 #define TS30    ((uint16_t*)((uint32_t)0x08FFF814))
 #define TS110   ((uint16_t*)((uint32_t)0x08FFF818))
+#endif
 
 /* macro for UART timeout */
 #define UART_TIMEOUT			100
 
+#ifdef __FLASH__
 /* macros for flash */
 #define DATA_TRANSMIT_LENGTH	2048 //byte
 
@@ -69,24 +84,47 @@ int tFahrenheit;
 #define DATA_WRITE_AT_A_TIME	16 //byte
 
 #define WRITING_BUFFER_DATATYPE_UINT16	16
-
 #define DATA_TRANSMIT_LOOP	(DATA_TRANSMIT_LENGTH*WRITING_BUFFER_DATATYPE_UINT16)/(DATA_WRITE_AT_A_TIME*BYTE_TO_BIT)
 
 #define DATA_READ_AT_A_TIME		4 //byte
 #define DATA_READ_LOOP			(DATA_TRANSMIT_LENGTH*WRITING_BUFFER_DATATYPE_UINT16)/(DATA_READ_AT_A_TIME*BYTE_TO_BIT) //32-read bits at a time & 4-bytes
 
-/* macros for watchdog */
-#define WATCHDOG_RESET_TIME		25 //in seconds
-#define PRESCALAR				64 //0->4, 2->8, 4->16, 8->32, 16->64, 32->128, 64->256
-#define RELOAD_VAL_FROM_SECONDS	(((WATCHDOG_RESET_TIME*1000*32000)/(4*PRESCALAR*1000))-1)
-
-uint32_t random32bit_generatedNumber;
-char alarmMsg[] = "ALARM ALARM ALARM\n";
-
-
 uint16_t buffer_tfs[DATA_TRANSMIT_LENGTH] = {0};
 uint32_t send_address = 0x080FE000U;
 uint32_t rcv_address = 0x080FE000U;
+#endif
+
+#ifdef __IWDG__
+/* macros for IWDG watchdog */
+#define WATCHDOG_RESET_TIME		25 //in seconds
+#define PRESCALAR				64 //0->4, 2->8, 4->16, 8->32, 16->64, 32->128, 64->256
+#define RELOAD_VAL_FROM_SECONDS	(((WATCHDOG_RESET_TIME*1000*32000)/(4*PRESCALAR*1000))-1)
+#endif
+
+#ifdef __WWDG__
+/* macros for WWDG watchdog */
+#define MAX_WINDOW_VAL			3 //in seconds
+#define MIN_WINDOW_VAL			0 //in seconds
+#define PRESCALAR_WWDG			128
+#define APB3_PERI_CLK_VAL		4
+#define COUNTER_VAL				((MAX_WINDOW_VAL*APB3_PERI_CLK_VAL*1000000)/(4096*PRESCALAR_WWDG))+64
+#define WINDOW_VAL				COUNTER_VAL - ((MIN_WINDOW_VAL*APB3_PERI_CLK_VAL*1000000)/(4096*PRESCALAR_WWDG))
+
+#define SECONDS_TO_WAIT			15
+#define LOOP_COUNT_WWDG			(int)(SECONDS_TO_WAIT/MAX_WINDOW_VAL)
+int check_loop_count_wwdg;
+
+#endif
+
+#ifdef __RNG__
+uint32_t random32bit_generatedNumber;
+#endif
+
+#ifdef __ALARM__
+char alarmMsg[] = "ALARM ALARM ALARM\n";
+#endif
+
+
 
 
 RTC_TimeTypeDef Time;
@@ -119,6 +157,12 @@ void FLASH_clear();
 
 void FLASH_Read(uint32_t StartPageAddress, uint32_t *RxBuf, uint16_t numberofwords);
 void Print_readed_data(uint32_t holdMultipleRead[]);
+
+void custom_WWDG_refresh(WWDG_HandleTypeDef *hwwdg){
+	WRITE_REG(hwwdg->Instance->CR, (hwwdg->Init.Counter));
+	check_loop_count_wwdg = 0;
+}
+
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -133,12 +177,15 @@ void Print_readed_data(uint32_t holdMultipleRead[]);
 int main(void)
 {
   /* USER CODE BEGIN 1 */
+	check_loop_count_wwdg = 0;
 	// Use local
+#ifdef __FLASH__
 	uint32_t holdMultipleRead[DATA_READ_LOOP] = {0};
 
 	for(int i=0; i<DATA_TRANSMIT_LENGTH; i++){
 		buffer_tfs[i] = i;
 	}
+#endif
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -163,42 +210,53 @@ int main(void)
   MX_USART3_UART_Init();
   MX_RNG_Init();
   MX_RTC_Init();
-//  MX_IWDG1_Init();
-  HAL_Delay(1000);
-  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_14, 1);
   MX_WWDG1_Init();
+#ifdef __IWDG__
+  MX_IWDG1_Init();
+  HAL_Delay(1000);
+	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_SET);
+#endif
+	HAL_UART_Transmit(&huart3, "System reboot\n", sizeof("System reboot\n"), 100);
+
   /* USER CODE BEGIN 2 */
 
+#ifdef __IWDG__
   /* watchdog */
-//  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_SET);
-//  HAL_UART_Transmit(&huart3, "uart initialized again\n", 23, 100);
-//  for(int i=0; i<=2; i++){
-//	  HAL_Delay(5000);
-//	  HAL_UART_Transmit(&huart3, "5 seconds\n", 10, 500);
-//	  HAL_IWDG_Refresh(&hiwdg1);
-//  }
+  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_SET);
+  HAL_UART_Transmit(&huart3, "uart initialized again\n", 23, 100);
+  for(int i=0; i<=2; i++){
+	  HAL_Delay(5000);
+	  HAL_UART_Transmit(&huart3, "5 seconds\n", 10, 500);
+	  HAL_IWDG_Refresh(&hiwdg1);
+  }
+#endif
 
-//  HAL_ADC_Start(&hadc2);
+  HAL_ADC_Start(&hadc2);
 
-
+#ifdef __TIME_DATE_ALARM__
   /* set time, date & alarm */
-//  set_time_custom();
-//  set_date_custom();
-//  set_alarm_custom();
+  set_time_custom();
+  set_date_custom();
+  set_alarm_custom();
+#endif
 
+#ifdef __FLASH__
   /* clear the flash */
-//  FLASH_clear();
+  FLASH_clear();
 
   /* write the flash */
-//  FLASH_write();
+  FLASH_write();
 
   /* Read from the flash memory */
-//  FLASH_Read(rcv_address, &holdMultipleRead[0], DATA_READ_LOOP);
+  FLASH_Read(rcv_address, &holdMultipleRead[0], DATA_READ_LOOP);
 
   /* print the readed data */
-//  Print_readed_data(holdMultipleRead);
+  Print_readed_data(holdMultipleRead);
+#endif
 
-
+#ifdef __WWDG__
+  custom_WWDG_refresh(&hwwdg1);
+#endif
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -208,25 +266,36 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-//	  HAL_IWDG_Refresh(&hiwdg1);
+#ifdef __IWDG__
+	  HAL_IWDG_Refresh(&hiwdg1);
+#endif
+
+#ifdef __TEMPERATURE__
 	/* get the temperature */
-//	int t = get_temperature();
-//
-//	/* transmit temperature through UART */
-//    transmit_temperature(t);
-//
-//	/* get the random number */
-//	gen_random_number();
+	int t = get_temperature();
 
+	/* transmit temperature through UART */
+    transmit_temperature(t);
+#endif
+
+
+#ifdef __RNG__
+	/* get the random number */
+	gen_random_number();
+#endif
+
+#ifdef __TIME_DATE_ALARM__
 	/* get the time and date */
-//	get_time_date();
-//
-//	HAL_UART_Transmit(&huart3, "\n", 1, UART_TIMEOUT);
+	get_time_date();
 
+	HAL_UART_Transmit(&huart3, "\n", 1, UART_TIMEOUT);
+#endif
 //	HAL_Delay(1000);
 
-	  HAL_Delay(22);
-	  HAL_WWDG_Refresh(&hwwdg1);
+#ifdef __WWDG__
+	  HAL_Delay(14900);
+	  custom_WWDG_refresh(&hwwdg1);
+#endif
 
   }
   /* USER CODE END 3 */
@@ -290,7 +359,7 @@ void SystemClock_Config(void)
   RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
   RCC_ClkInitStruct.SYSCLKDivider = RCC_SYSCLK_DIV1;
   RCC_ClkInitStruct.AHBCLKDivider = RCC_HCLK_DIV1;
-  RCC_ClkInitStruct.APB3CLKDivider = RCC_APB3_DIV1;
+  RCC_ClkInitStruct.APB3CLKDivider = RCC_APB3_DIV16;
   RCC_ClkInitStruct.APB1CLKDivider = RCC_APB1_DIV1;
   RCC_ClkInitStruct.APB2CLKDivider = RCC_APB2_DIV1;
   RCC_ClkInitStruct.APB4CLKDivider = RCC_APB4_DIV1;
@@ -562,10 +631,33 @@ static void MX_WWDG1_Init(void)
 
   /* USER CODE END WWDG1_Init 1 */
   hwwdg1.Instance = WWDG1;
-  hwwdg1.Init.Prescaler = WWDG_PRESCALER_16;
-  hwwdg1.Init.Window = 71;
-  hwwdg1.Init.Counter = 83;
-  hwwdg1.Init.EWIMode = WWDG_EWI_DISABLE;
+  if(PRESCALAR_WWDG==1){
+	  hwwdg1.Init.Prescaler = WWDG_PRESCALER_1;
+  }
+  if(PRESCALAR_WWDG==2){
+	  hwwdg1.Init.Prescaler = WWDG_PRESCALER_2;
+	}
+  if(PRESCALAR_WWDG==4){
+  	  hwwdg1.Init.Prescaler = WWDG_PRESCALER_4;
+    }
+  if(PRESCALAR_WWDG==8){
+  	  hwwdg1.Init.Prescaler = WWDG_PRESCALER_8;
+    }
+  if(PRESCALAR_WWDG==16){
+  	  hwwdg1.Init.Prescaler = WWDG_PRESCALER_16;
+    }
+  if(PRESCALAR_WWDG==32){
+  	  hwwdg1.Init.Prescaler = WWDG_PRESCALER_32;
+    }
+  if(PRESCALAR_WWDG==64){
+  	  hwwdg1.Init.Prescaler = WWDG_PRESCALER_64;
+    }
+  if(PRESCALAR_WWDG==128){
+  	  hwwdg1.Init.Prescaler = WWDG_PRESCALER_128;
+    }
+  hwwdg1.Init.Window = (WINDOW_VAL+1);
+  hwwdg1.Init.Counter = (COUNTER_VAL+1);
+  hwwdg1.Init.EWIMode = WWDG_EWI_ENABLE;
   if (HAL_WWDG_Init(&hwwdg1) != HAL_OK)
   {
     Error_Handler();
@@ -655,22 +747,30 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+#ifdef __ALARM__
 void HAL_RTC_AlarmAEventCallback(RTC_HandleTypeDef *hrtc)
 {
   HAL_UART_Transmit(&huart3, (uint8_t*)alarmMsg, strlen(alarmMsg), UART_TIMEOUT);
 }
+#endif
 
-void get_time_date(){
-	char time[30];
-	char date[30];
-	HAL_RTC_GetDate(&hrtc, &Date, RTC_FORMAT_BIN);
-	sprintf(date, "Date: %02d.%02d.%02d\n", Date.Date, Date.Month, Date.Year);
-	HAL_RTC_GetTime(&hrtc, &Time, RTC_FORMAT_BIN);
-	sprintf(time, "Time: %02d:%02d:%02d\n", Time.Hours, Time.Minutes, Time.Seconds);
-	HAL_UART_Transmit(&huart3, (uint8_t*)date, strlen(date), 5*UART_TIMEOUT);
-	HAL_UART_Transmit(&huart3, (uint8_t*)time, strlen(time), 5*UART_TIMEOUT);
+#ifdef __WWDG__
+void HAL_WWDG_EarlyWakeupCallback(WWDG_HandleTypeDef *hwwdg)
+{
+	check_loop_count_wwdg+=1;
+	if(check_loop_count_wwdg == LOOP_COUNT_WWDG){
+		HAL_UART_Transmit(&huart3, "system reboot using watchdog\n", sizeof("system reboot using watchdog\n"), 100);
+	}
+	else{
+		WRITE_REG(hwwdg->Instance->CR, (hwwdg->Init.Counter));
+		HAL_UART_Transmit(&huart3, "inside else ISR\n", sizeof("inside else ISR\n"), 100);
+		HAL_WWDG_Refresh(&hwwdg1);
+	}
 }
+#endif
 
+
+#ifdef __TEMPERATURE__
 int get_temperature(){
 	HAL_ADC_PollForConversion(&hadc2, 1000);
 	readValue = HAL_ADC_GetValue(&hadc2);
@@ -685,18 +785,33 @@ int get_temperature(){
 void transmit_temperature(int temp){
 	uint8_t temperature_c[100];
 	uint8_t read[100];
-	sprintf(temperature_c, "Temperature in Celcius: %d\n", temp);
+	sprintf(temperature_c, "Temperature in Celsius: %d\n", temp);
 	sprintf(read, "Temperature read: %d\n", readValue);
 	HAL_UART_Transmit(&huart3, temperature_c, strlen(temperature_c), UART_TIMEOUT);
 	HAL_UART_Transmit(&huart3, read, strlen(read), UART_TIMEOUT);
 }
+#endif
 
+#ifdef __RNG__
 void gen_random_number(){
 	HAL_RNG_GenerateRandomNumber(&hrng, &random32bit_generatedNumber);
 	uint8_t rng_data[100] = {0};
 	sprintf(rng_data, "Generated random number: %d", random32bit_generatedNumber);
 	HAL_UART_Transmit(&huart3, rng_data, strlen(rng_data), UART_TIMEOUT);
 	HAL_UART_Transmit(&huart3, "\n", 1, UART_TIMEOUT);
+}
+#endif
+
+#ifdef __TIME_DATE_ALARM__
+void get_time_date(){
+	char time[30];
+	char date[30];
+	HAL_RTC_GetDate(&hrtc, &Date, RTC_FORMAT_BIN);
+	sprintf(date, "Date: %02d.%02d.%02d\n", Date.Date, Date.Month, Date.Year);
+	HAL_RTC_GetTime(&hrtc, &Time, RTC_FORMAT_BIN);
+	sprintf(time, "Time: %02d:%02d:%02d\n", Time.Hours, Time.Minutes, Time.Seconds);
+	HAL_UART_Transmit(&huart3, (uint8_t*)date, strlen(date), 5*UART_TIMEOUT);
+	HAL_UART_Transmit(&huart3, (uint8_t*)time, strlen(time), 5*UART_TIMEOUT);
 }
 
 void set_time_custom(){
@@ -729,7 +844,9 @@ void set_alarm_custom(){
 	uint8_t temp[] = "alarm set!\n";
 	HAL_UART_Transmit(&huart3, (uint8_t*)temp, strlen(temp), 5*UART_TIMEOUT);
 }
+#endif
 
+#ifdef __FLASH__
 void FLASH_Read(uint32_t StartPageAddress, uint32_t *RxBuf, uint16_t numberofwords){
 	uint32_t temp;
 	while (1)
@@ -765,7 +882,7 @@ void FLASH_write(){
 		  }
 	  send_address+=16;
 	}
-	// lock the flash once donw writing
+	// lock the flash once done writing
 	if(HAL_FLASH_Unlock() != HAL_OK){
 	  HAL_UART_Transmit(&huart3, "fail" ,4, 5*UART_TIMEOUT);
 	}
@@ -789,6 +906,7 @@ void FLASH_clear(){
 	    HAL_UART_Transmit(&huart3, "fail" ,4, 5*UART_TIMEOUT);
 	  }
 }
+#endif
 /* USER CODE END 4 */
 
 /**
@@ -805,6 +923,7 @@ void Error_Handler(void)
   }
   /* USER CODE END Error_Handler_Debug */
 }
+
 
 #ifdef  USE_FULL_ASSERT
 /**
