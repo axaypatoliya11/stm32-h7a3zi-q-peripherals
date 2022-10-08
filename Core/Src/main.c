@@ -106,13 +106,13 @@ uint32_t rcv_address = 0x080FE000U;
 #define MAX_WINDOW_VAL			3 //in seconds
 #define MIN_WINDOW_VAL			0 //in seconds
 #define PRESCALAR_WWDG			128
-#define APB3_PERI_CLK_VAL		4
-#define COUNTER_VAL				((MAX_WINDOW_VAL*APB3_PERI_CLK_VAL*1000000)/(4096*PRESCALAR_WWDG))+64
-#define WINDOW_VAL				COUNTER_VAL - ((MIN_WINDOW_VAL*APB3_PERI_CLK_VAL*1000000)/(4096*PRESCALAR_WWDG))
+#define SYS_CLK					HAL_RCC_GetSysClockFreq()
 
 #define SECONDS_TO_WAIT			15
 #define LOOP_COUNT_WWDG			(int)(SECONDS_TO_WAIT/MAX_WINDOW_VAL)
 int check_loop_count_wwdg;
+int apb3_clk_freq = 0;
+
 
 #endif
 
@@ -157,11 +157,9 @@ void FLASH_clear();
 
 void FLASH_Read(uint32_t StartPageAddress, uint32_t *RxBuf, uint16_t numberofwords);
 void Print_readed_data(uint32_t holdMultipleRead[]);
-
-void custom_WWDG_refresh(WWDG_HandleTypeDef *hwwdg){
-	WRITE_REG(hwwdg->Instance->CR, (hwwdg->Init.Counter));
-	check_loop_count_wwdg = 0;
-}
+int get_APB3_clk();
+int hextodc(char *hex);
+void custom_WWDG_refresh(WWDG_HandleTypeDef *hwwdg);
 
 /* USER CODE END PFP */
 
@@ -178,6 +176,14 @@ int main(void)
 {
   /* USER CODE BEGIN 1 */
 	check_loop_count_wwdg = 0;
+
+#ifdef __WWDG__
+	apb3_clk_freq = get_APB3_clk();
+	#define APB3_PERI_CLK_VAL		apb3_clk_freq//4
+	#define COUNTER_VAL				((MAX_WINDOW_VAL*APB3_PERI_CLK_VAL*1000000)/(4096*PRESCALAR_WWDG))+64
+	#define WINDOW_VAL				COUNTER_VAL - ((MIN_WINDOW_VAL*APB3_PERI_CLK_VAL*1000000)/(4096*PRESCALAR_WWDG))
+#endif
+
 	// Use local
 #ifdef __FLASH__
 	uint32_t holdMultipleRead[DATA_READ_LOOP] = {0};
@@ -217,6 +223,8 @@ int main(void)
 	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_SET);
 #endif
 	HAL_UART_Transmit(&huart3, "System reboot\n", sizeof("System reboot\n"), 100);
+
+	get_APB3_clk();
 
   /* USER CODE BEGIN 2 */
 
@@ -631,30 +639,7 @@ static void MX_WWDG1_Init(void)
 
   /* USER CODE END WWDG1_Init 1 */
   hwwdg1.Instance = WWDG1;
-  if(PRESCALAR_WWDG==1){
-	  hwwdg1.Init.Prescaler = WWDG_PRESCALER_1;
-  }
-  if(PRESCALAR_WWDG==2){
-	  hwwdg1.Init.Prescaler = WWDG_PRESCALER_2;
-	}
-  if(PRESCALAR_WWDG==4){
-  	  hwwdg1.Init.Prescaler = WWDG_PRESCALER_4;
-    }
-  if(PRESCALAR_WWDG==8){
-  	  hwwdg1.Init.Prescaler = WWDG_PRESCALER_8;
-    }
-  if(PRESCALAR_WWDG==16){
-  	  hwwdg1.Init.Prescaler = WWDG_PRESCALER_16;
-    }
-  if(PRESCALAR_WWDG==32){
-  	  hwwdg1.Init.Prescaler = WWDG_PRESCALER_32;
-    }
-  if(PRESCALAR_WWDG==64){
-  	  hwwdg1.Init.Prescaler = WWDG_PRESCALER_64;
-    }
-  if(PRESCALAR_WWDG==128){
-  	  hwwdg1.Init.Prescaler = WWDG_PRESCALER_128;
-    }
+  hwwdg1.Init.Prescaler = WWDG_PRESCALER_128;
   hwwdg1.Init.Window = (WINDOW_VAL+1);
   hwwdg1.Init.Counter = (COUNTER_VAL+1);
   hwwdg1.Init.EWIMode = WWDG_EWI_ENABLE;
@@ -762,11 +747,121 @@ void HAL_WWDG_EarlyWakeupCallback(WWDG_HandleTypeDef *hwwdg)
 		HAL_UART_Transmit(&huart3, "system reboot using watchdog\n", sizeof("system reboot using watchdog\n"), 100);
 	}
 	else{
-		WRITE_REG(hwwdg->Instance->CR, (hwwdg->Init.Counter));
+//		WRITE_REG(hwwdg->Instance->CR, (hwwdg->Init.Counter));
 		HAL_UART_Transmit(&huart3, "inside else ISR\n", sizeof("inside else ISR\n"), 100);
 		HAL_WWDG_Refresh(&hwwdg1);
 	}
 }
+
+int get_APB3_clk(){
+	/* get the clock freq of APB3 clock */
+	uint32_t rcc_hpre = (RCC->CDCFGR1) & 0xf; //first 4 bits
+	uint32_t rcc_cdppre = (RCC->CDCFGR1 >> 4) & 0x7; //bit 4,5,6
+	uint32_t rcc_cdcpre = (RCC->CDCFGR1 >> 8) & 0x4; //bit 8,9,10,11
+	uint32_t cdcpre_clock = {0};
+	if(rcc_cdcpre == 0xf){
+		cdcpre_clock = SYS_CLK/0x200;
+	}
+	else if(rcc_cdcpre == 0xe){
+		cdcpre_clock = SYS_CLK/0x100;
+	}
+	else if(rcc_cdcpre == 0xd){
+		cdcpre_clock = SYS_CLK/0x80;
+	}
+	else if(rcc_cdcpre == 0xc){
+		cdcpre_clock = SYS_CLK/0x40;
+	}
+	else if(rcc_cdcpre == 0xb){
+		cdcpre_clock = SYS_CLK/0x10;
+	}
+	else if(rcc_cdcpre == 0xa){
+		cdcpre_clock = SYS_CLK/0x8;
+	}
+	else if(rcc_cdcpre == 0x9){
+		cdcpre_clock = SYS_CLK/0x4;
+	}
+	else if(rcc_cdcpre == 0x8){
+		cdcpre_clock = SYS_CLK/0x2;
+	}
+	else {
+		cdcpre_clock = SYS_CLK;
+	}
+
+	uint32_t hpre_clock = {0};
+	if(rcc_hpre == 0xf){
+		hpre_clock = cdcpre_clock/0x200;
+	}
+	else if(rcc_hpre == 0xe){
+		hpre_clock = cdcpre_clock/0x100;
+	}
+	else if(rcc_hpre == 0xd){
+		hpre_clock = cdcpre_clock/0x80;
+	}
+	else if(rcc_hpre == 0xc){
+		hpre_clock = cdcpre_clock/0x40;
+	}
+	else if(rcc_hpre == 0xb){
+		hpre_clock = cdcpre_clock/0x10;
+	}
+	else if(rcc_hpre == 0xa){
+		hpre_clock = cdcpre_clock/0x8;
+	}
+	else if(rcc_hpre == 0x9){
+		hpre_clock = cdcpre_clock/0x4;
+	}
+	else if(rcc_hpre == 0x8){
+		hpre_clock = cdcpre_clock/0x2;
+	}
+	else {
+		hpre_clock = cdcpre_clock;
+	}
+
+	uint32_t apb3p_clock = {0};
+	if(rcc_cdppre == 0x7){
+		apb3p_clock = hpre_clock/0x10;
+	}
+	else if(rcc_cdppre == 0x6){
+		apb3p_clock = hpre_clock/0x8;
+	}
+	else if(rcc_cdppre == 0x5){
+		apb3p_clock = hpre_clock/0x4;
+	}
+	else if(rcc_cdppre == 0x4){
+		apb3p_clock = hpre_clock/0x2;
+	}
+	else {
+		apb3p_clock = hpre_clock;
+	}
+
+	apb3p_clock = apb3p_clock/0xF4240;
+	char temp[2];
+	sprintf(temp, "%x", apb3p_clock);
+	int dec = 0;
+	dec = hextodc(temp);
+	return dec;
+}
+
+void custom_WWDG_refresh(WWDG_HandleTypeDef *hwwdg){
+	WRITE_REG(hwwdg->Instance->CR, (hwwdg->Init.Counter));
+	check_loop_count_wwdg = 0;
+}
+
+int hextodc(char *hex){
+   int y = 0;
+   int dec = 0;
+   int x, i;
+   for(i = strlen(hex) - 1 ; i >= 0 ; --i){
+      if(hex[i]>='0'&&hex[i]<='9'){
+         x = hex[i] - '0';
+      }
+      else{
+         x = hex[i] - 'A' + 10;
+      }
+      dec = dec + x * pow(16 , y);// converting hexadecimal to integer value ++y;
+   }
+   return dec;
+}
+
 #endif
 
 
@@ -866,7 +961,6 @@ void Print_readed_data(uint32_t holdMultipleRead[]){
 	  b = holdMultipleRead[i] & 0x0000ffff;
 	  sprintf(temp_data, "%d\n%d\n", b,a);
 	  HAL_UART_Transmit(&huart3, temp_data, strlen(temp_data), UART_TIMEOUT);
-
   }
 }
 
