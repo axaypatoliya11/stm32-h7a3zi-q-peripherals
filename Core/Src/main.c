@@ -977,7 +977,7 @@ void FLASH_write(){
 	  send_address+=16;
 	}
 	// lock the flash once done writing
-	if(HAL_FLASH_Unlock() != HAL_OK){
+	if(HAL_FLASH_Lock() != HAL_OK){
 	  HAL_UART_Transmit(&huart3, "fail" ,4, 5*UART_TIMEOUT);
 	}
 }
