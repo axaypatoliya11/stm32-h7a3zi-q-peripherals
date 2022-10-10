@@ -57,11 +57,16 @@ WWDG_HandleTypeDef hwwdg1;
 /* USER CODE BEGIN PV */
 
 /* Support Macros */
-//#define __RNG__
-//#define __TEMPERATURE__
-//#define __FLASH__
-//#define __TIME_DATE_ALARM__
-//#define __IWDG__
+#define __RNG__
+#undef __RNG__
+#define __TEMPERATURE__
+#undef __TEMPERATURE__
+#define __FLASH__
+#undef __FLASH__
+#define __TIME_DATE_ALARM__
+#undef __TIME_DATE_ALARM__
+#define __IWDG__
+#undef __IWDG__
 #define __WWDG__
 
 #ifdef __TEMPERATURE__
