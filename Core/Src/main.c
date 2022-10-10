@@ -62,12 +62,13 @@ WWDG_HandleTypeDef hwwdg1;
 #define __TEMPERATURE__
 #undef __TEMPERATURE__
 #define __FLASH__
-#undef __FLASH__
+//#undef __FLASH__
 #define __TIME_DATE_ALARM__
 #undef __TIME_DATE_ALARM__
 #define __IWDG__
 #undef __IWDG__
 #define __WWDG__
+#undef __WWDG__
 
 #ifdef __TEMPERATURE__
 /* macros for temperature */
@@ -125,10 +126,9 @@ int apb3_clk_freq = 0;
 uint32_t random32bit_generatedNumber;
 #endif
 
-#ifdef __ALARM__
+#ifdef __TIME_DATE_ALARM__
 char alarmMsg[] = "ALARM ALARM ALARM\n";
 #endif
-
 
 
 
@@ -180,13 +180,24 @@ void custom_WWDG_refresh(WWDG_HandleTypeDef *hwwdg);
 int main(void)
 {
   /* USER CODE BEGIN 1 */
-	check_loop_count_wwdg = 0;
+	  HAL_Init();
+#ifdef __IWDG__
+  HAL_Delay(1000);
+  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_SET);
+#endif
+	  /* USER CODE BEGIN Init */
+
+	  /* USER CODE END Init */
+
+	  /* Configure the system clock */
+	  SystemClock_Config();
 
 #ifdef __WWDG__
+    check_loop_count_wwdg = 0;
 	apb3_clk_freq = get_APB3_clk();
-	#define APB3_PERI_CLK_VAL		apb3_clk_freq//4
-	#define COUNTER_VAL				((MAX_WINDOW_VAL*APB3_PERI_CLK_VAL*1000000)/(4096*PRESCALAR_WWDG))+64
-	#define WINDOW_VAL				COUNTER_VAL - ((MIN_WINDOW_VAL*APB3_PERI_CLK_VAL*1000000)/(4096*PRESCALAR_WWDG))
+	#define APB3_PERI_CLK_VAL		apb3_clk_freq//5
+	#define COUNTER_VAL				(((MAX_WINDOW_VAL*APB3_PERI_CLK_VAL*1000000)/(4096*PRESCALAR_WWDG))+64)+1
+	#define WINDOW_VAL				(COUNTER_VAL - ((MIN_WINDOW_VAL*APB3_PERI_CLK_VAL*1000000)/(4096*PRESCALAR_WWDG)))+1
 #endif
 
 	// Use local
@@ -202,14 +213,7 @@ int main(void)
   /* MCU Configuration--------------------------------------------------------*/
 
   /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
-  HAL_Init();
 
-  /* USER CODE BEGIN Init */
-
-  /* USER CODE END Init */
-
-  /* Configure the system clock */
-  SystemClock_Config();
 
   /* USER CODE BEGIN SysInit */
 
@@ -221,20 +225,11 @@ int main(void)
   MX_USART3_UART_Init();
   MX_RNG_Init();
   MX_RTC_Init();
-  MX_WWDG1_Init();
-#ifdef __IWDG__
-  MX_IWDG1_Init();
-  HAL_Delay(1000);
-	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_SET);
-#endif
-	HAL_UART_Transmit(&huart3, "System reboot\n", sizeof("System reboot\n"), 100);
-
-	get_APB3_clk();
-
   /* USER CODE BEGIN 2 */
 
 #ifdef __IWDG__
   /* watchdog */
+  MX_IWDG1_Init();
   HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_SET);
   HAL_UART_Transmit(&huart3, "uart initialized again\n", 23, 100);
   for(int i=0; i<=2; i++){
@@ -268,6 +263,7 @@ int main(void)
 #endif
 
 #ifdef __WWDG__
+  MX_WWDG1_Init();
   custom_WWDG_refresh(&hwwdg1);
 #endif
   /* USER CODE END 2 */
@@ -280,7 +276,8 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
 #ifdef __IWDG__
-	  HAL_IWDG_Refresh(&hiwdg1);
+//	  HAL_Delay(6000);
+//	  HAL_IWDG_Refresh(&hiwdg1);
 #endif
 
 #ifdef __TEMPERATURE__
@@ -294,6 +291,7 @@ int main(void)
 
 #ifdef __RNG__
 	/* get the random number */
+    HAL_Delay(10*UART_TIMEOUT);
 	gen_random_number();
 #endif
 
@@ -302,11 +300,12 @@ int main(void)
 	get_time_date();
 
 	HAL_UART_Transmit(&huart3, "\n", 1, UART_TIMEOUT);
+	HAL_Delay(10*UART_TIMEOUT);
 #endif
 //	HAL_Delay(1000);
 
 #ifdef __WWDG__
-	  HAL_Delay(14900);
+	  HAL_Delay(16000);
 	  custom_WWDG_refresh(&hwwdg1);
 #endif
 
@@ -352,7 +351,7 @@ void SystemClock_Config(void)
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
   RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;
   RCC_OscInitStruct.PLL.PLLM = 4;
-  RCC_OscInitStruct.PLL.PLLN = 8;
+  RCC_OscInitStruct.PLL.PLLN = 10;
   RCC_OscInitStruct.PLL.PLLP = 2;
   RCC_OscInitStruct.PLL.PLLQ = 4;
   RCC_OscInitStruct.PLL.PLLR = 2;
@@ -447,6 +446,7 @@ static void MX_ADC2_Init(void)
   * @param None
   * @retval None
   */
+#ifdef __IWDG__
 static void MX_IWDG1_Init(void)
 {
 
@@ -460,7 +460,7 @@ static void MX_IWDG1_Init(void)
   hiwdg1.Instance = IWDG1;
   hiwdg1.Init.Prescaler = IWDG_PRESCALER_256;
   hiwdg1.Init.Window = 4095;
-  hiwdg1.Init.Reload = 3749;
+  hiwdg1.Init.Reload = RELOAD_VAL_FROM_SECONDS;
   if (HAL_IWDG_Init(&hiwdg1) != HAL_OK)
   {
     Error_Handler();
@@ -470,7 +470,7 @@ static void MX_IWDG1_Init(void)
   /* USER CODE END IWDG1_Init 2 */
 
 }
-
+#endif
 /**
   * @brief RNG Initialization Function
   * @param None
@@ -510,9 +510,9 @@ static void MX_RTC_Init(void)
 
   /* USER CODE END RTC_Init 0 */
 
-  RTC_TimeTypeDef sTime = {0};
-  RTC_DateTypeDef sDate = {0};
-  RTC_AlarmTypeDef sAlarm = {0};
+//  RTC_TimeTypeDef sTime = {0};
+//  RTC_DateTypeDef sDate = {0};
+//  RTC_AlarmTypeDef sAlarm = {0};
 
   /* USER CODE BEGIN RTC_Init 1 */
 
@@ -539,41 +539,41 @@ static void MX_RTC_Init(void)
 
   /** Initialize RTC and set the Time and Date
   */
-  sTime.Hours = 0x0;
-  sTime.Minutes = 0x0;
-  sTime.Seconds = 0x0;
-  sTime.DayLightSaving = RTC_DAYLIGHTSAVING_NONE;
-  sTime.StoreOperation = RTC_STOREOPERATION_RESET;
-  if (HAL_RTC_SetTime(&hrtc, &sTime, RTC_FORMAT_BCD) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sDate.WeekDay = RTC_WEEKDAY_TUESDAY;
-  sDate.Month = RTC_MONTH_SEPTEMBER;
-  sDate.Date = 0x20;
-  sDate.Year = 0x22;
-  if (HAL_RTC_SetDate(&hrtc, &sDate, RTC_FORMAT_BCD) != HAL_OK)
-  {
-    Error_Handler();
-  }
+//  sTime.Hours = 0x0;
+//  sTime.Minutes = 0x0;
+//  sTime.Seconds = 0x0;
+//  sTime.DayLightSaving = RTC_DAYLIGHTSAVING_NONE;
+//  sTime.StoreOperation = RTC_STOREOPERATION_RESET;
+//  if (HAL_RTC_SetTime(&hrtc, &sTime, RTC_FORMAT_BCD) != HAL_OK)
+//  {
+//    Error_Handler();
+//  }
+//  sDate.WeekDay = RTC_WEEKDAY_TUESDAY;
+//  sDate.Month = RTC_MONTH_SEPTEMBER;
+//  sDate.Date = 0x20;
+//  sDate.Year = 0x22;
+//  if (HAL_RTC_SetDate(&hrtc, &sDate, RTC_FORMAT_BCD) != HAL_OK)
+//  {
+//    Error_Handler();
+//  }
 
   /** Enable the Alarm A
   */
-  sAlarm.AlarmTime.Hours = 0x11;
-  sAlarm.AlarmTime.Minutes = 0x12;
-  sAlarm.AlarmTime.Seconds = 0x0;
-  sAlarm.AlarmTime.SubSeconds = 0x0;
-  sAlarm.AlarmTime.DayLightSaving = RTC_DAYLIGHTSAVING_NONE;
-  sAlarm.AlarmTime.StoreOperation = RTC_STOREOPERATION_RESET;
-  sAlarm.AlarmMask = RTC_ALARMMASK_NONE;
-  sAlarm.AlarmSubSecondMask = RTC_ALARMSUBSECONDMASK_ALL;
-  sAlarm.AlarmDateWeekDaySel = RTC_ALARMDATEWEEKDAYSEL_DATE;
-  sAlarm.AlarmDateWeekDay = 0x1;
-  sAlarm.Alarm = RTC_ALARM_A;
-  if (HAL_RTC_SetAlarm_IT(&hrtc, &sAlarm, RTC_FORMAT_BCD) != HAL_OK)
-  {
-    Error_Handler();
-  }
+//  sAlarm.AlarmTime.Hours = 0x11;
+//  sAlarm.AlarmTime.Minutes = 0x12;
+//  sAlarm.AlarmTime.Seconds = 0x0;
+//  sAlarm.AlarmTime.SubSeconds = 0x0;
+//  sAlarm.AlarmTime.DayLightSaving = RTC_DAYLIGHTSAVING_NONE;
+//  sAlarm.AlarmTime.StoreOperation = RTC_STOREOPERATION_RESET;
+//  sAlarm.AlarmMask = RTC_ALARMMASK_NONE;
+//  sAlarm.AlarmSubSecondMask = RTC_ALARMSUBSECONDMASK_ALL;
+//  sAlarm.AlarmDateWeekDaySel = RTC_ALARMDATEWEEKDAYSEL_DATE;
+//  sAlarm.AlarmDateWeekDay = 0x1;
+//  sAlarm.Alarm = RTC_ALARM_A;
+//  if (HAL_RTC_SetAlarm_IT(&hrtc, &sAlarm, RTC_FORMAT_BCD) != HAL_OK)
+//  {
+//    Error_Handler();
+//  }
   /* USER CODE BEGIN RTC_Init 2 */
 	HAL_PWR_EnableBkUpAccess();
   /* USER CODE END RTC_Init 2 */
@@ -633,6 +633,8 @@ static void MX_USART3_UART_Init(void)
   * @param None
   * @retval None
   */
+
+#ifdef __WWDG__
 static void MX_WWDG1_Init(void)
 {
 
@@ -645,8 +647,8 @@ static void MX_WWDG1_Init(void)
   /* USER CODE END WWDG1_Init 1 */
   hwwdg1.Instance = WWDG1;
   hwwdg1.Init.Prescaler = WWDG_PRESCALER_128;
-  hwwdg1.Init.Window = (WINDOW_VAL+1);
-  hwwdg1.Init.Counter = (COUNTER_VAL+1);
+  hwwdg1.Init.Window = WINDOW_VAL;
+  hwwdg1.Init.Counter = COUNTER_VAL;
   hwwdg1.Init.EWIMode = WWDG_EWI_ENABLE;
   if (HAL_WWDG_Init(&hwwdg1) != HAL_OK)
   {
@@ -657,7 +659,7 @@ static void MX_WWDG1_Init(void)
   /* USER CODE END WWDG1_Init 2 */
 
 }
-
+#endif
 /**
   * @brief GPIO Initialization Function
   * @param None
@@ -737,12 +739,6 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-#ifdef __ALARM__
-void HAL_RTC_AlarmAEventCallback(RTC_HandleTypeDef *hrtc)
-{
-  HAL_UART_Transmit(&huart3, (uint8_t*)alarmMsg, strlen(alarmMsg), UART_TIMEOUT);
-}
-#endif
 
 #ifdef __WWDG__
 void HAL_WWDG_EarlyWakeupCallback(WWDG_HandleTypeDef *hwwdg)
@@ -903,6 +899,11 @@ void gen_random_number(){
 #endif
 
 #ifdef __TIME_DATE_ALARM__
+void HAL_RTC_AlarmAEventCallback(RTC_HandleTypeDef *hrtc)
+{
+  HAL_UART_Transmit(&huart3, (uint8_t*)alarmMsg, strlen(alarmMsg), UART_TIMEOUT);
+}
+
 void get_time_date(){
 	char time[30];
 	char date[30];
@@ -916,10 +917,10 @@ void get_time_date(){
 
 void set_time_custom(){
 	if(HAL_RTCEx_BKUPRead(&hrtc, RTC_BKP_DR0) != 0xFF){
-		setTime.Hours = 0x11;
-		setTime.Minutes = 0x11;
+		setTime.Hours = 0xb;
+		setTime.Minutes = 0xb;
 		setTime.Seconds = 0x00;
-		HAL_RTC_SetTime(&hrtc, &setTime, RTC_FORMAT_BCD);
+		HAL_RTC_SetTime(&hrtc, &setTime, RTC_FORMAT_BIN);
 		HAL_RTCEx_BKUPWrite(&hrtc, RTC_BKP_DR0, 0xFF);
 	} else{
 		uint8_t temp[100] = {0};
@@ -929,15 +930,16 @@ void set_time_custom(){
 }
 
 void set_date_custom(){
-	setDate.Date = 0x23;
-	setDate.Month = 0x09;
-	setDate.Year = 0x22;
+	setDate.Date = 0xa;
+	setDate.Month = 0xa;
+	setDate.Year = 0x16;
+	HAL_RTC_SetDate(&hrtc, &setDate, RTC_FORMAT_BIN);
 }
 
 void set_alarm_custom(){
 	Alarm.Alarm = RTC_ALARM_A;
-	Alarm.AlarmTime.Hours = 0x11;
-	Alarm.AlarmTime.Minutes = 0x12;
+	Alarm.AlarmTime.Hours = 0xb;
+	Alarm.AlarmTime.Minutes = 0xc;
 	Alarm.AlarmTime.Seconds = 0x00;
 	Alarm.AlarmMask = RTC_ALARMMASK_DATEWEEKDAY;
 	HAL_RTC_SetAlarm_IT(&hrtc, &Alarm, RTC_FORMAT_BIN);
@@ -1022,7 +1024,6 @@ void Error_Handler(void)
   }
   /* USER CODE END Error_Handler_Debug */
 }
-
 
 #ifdef  USE_FULL_ASSERT
 /**
