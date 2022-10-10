@@ -137,8 +137,6 @@
 /* Includes ------------------------------------------------------------------*/
 #include "stm32h7xx_hal.h"
 
-int check_loop_count_wwdg;
-
 /** @addtogroup STM32H7xx_HAL_Driver
   * @{
   */
@@ -353,7 +351,8 @@ HAL_StatusTypeDef HAL_WWDG_UnRegisterCallback(WWDG_HandleTypeDef *hwwdg, HAL_WWD
   */
 HAL_StatusTypeDef HAL_WWDG_Refresh(WWDG_HandleTypeDef *hwwdg)
 {
-	WRITE_REG(hwwdg->Instance->CR, (hwwdg->Init.Counter));
+  /* Write to WWDG CR the WWDG Counter value to refresh with */
+  WRITE_REG(hwwdg->Instance->CR, (hwwdg->Init.Counter));
 
   /* Return function status */
   return HAL_OK;
