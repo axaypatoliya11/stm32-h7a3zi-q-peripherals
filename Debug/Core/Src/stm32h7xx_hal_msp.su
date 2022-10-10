@@ -7,3 +7,4 @@ stm32h7xx_hal_msp.c:202:6:HAL_RTC_MspInit	200	static
 stm32h7xx_hal_msp.c:238:6:HAL_RTC_MspDeInit	16	static
 stm32h7xx_hal_msp.c:263:6:HAL_UART_MspInit	232	static
 stm32h7xx_hal_msp.c:310:6:HAL_UART_MspDeInit	16	static
+stm32h7xx_hal_msp.c:339:6:HAL_WWDG_MspInit	24	static
